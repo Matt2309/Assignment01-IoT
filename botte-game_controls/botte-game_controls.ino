@@ -1,7 +1,6 @@
 #include <LiquidCrystal_I2C.h>
 #include <avr/sleep.h>
 
-
 const int greenLedPins[] = {12, 11, 10, 9};
 const int redLedPin = 8;
 const int btn[] = {2, 3, 4, 5};
@@ -15,7 +14,7 @@ int difficultyLevel = 1;
 int potValue = 0;
 unsigned long startTime;
 const int maxTime = 10000;
-boolean wakeUpFlag = false;  //serve per sapere se è stato premuto il pulsante per risveglio da deep sleeping
+volatile boolean wakeUpFlag = false;  //serve per sapere se è stato premuto il pulsante per risveglio da deep sleeping
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
  
@@ -97,7 +96,7 @@ void welcomeMessage(){
 
 void enterDeepSleepUntilB1(){
   boolean btn1pressed = false;
-  if(btn[0] == LOW){
+  if(btn[0] == HIGH){
     //btn premuto in tempo, avvio gioco
     btn1pressed = true;
   }
@@ -110,30 +109,27 @@ void enterDeepSleepUntilB1(){
 
 void enterDeepSleep(){
   Serial.println("tempo scaduto, deep sleeping in avvio");
-  delay(1000);
-  lcd.clear();
-  digitalWrite(redLedPin, LOW);
 
-  // Imposta l'interrupt sul pin di avvio (B1) per il risveglio (LOW perché usiamo pull-up)
-  // Utilizziamo un interrupt esterno (Pin 2 o 3 per Uno/Nano)
-  // Dobbiamo usare CHANGE se il pin è collegato a massa e vogliamo risvegliarlo
-  // quando viene premuto e quando viene rilasciato. Usiamo LOW perché il circuito
-  // in idle (non premuto) è HIGH, e va a LOW quando premuto.
-  //abilita risveglio su btn 1 --> digital 2
-  attachInterrupt(digitalPinToInterrupt(btn[0]), wakeUp, LOW);
+  lcd.noDisplay();
+  digitalWrite(redLedPin, LOW);
+  allGreenLedsOff();
+
+// Abilita l'interrupt di risveglio sul Pin 2 (btn[0])
+// Usiamo LOW perché il pin è HIGH (pull-up) e va a LOW quando premuto
+ attachInterrupt(digitalPinToInterrupt(btn[0]), wakeUp, RISING);
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
   sleep_enable();
-  sei();
-
   sleep_mode();
   //risveglio
   sleep_disable();
   detachInterrupt(digitalPinToInterrupt(btn[0])); //disattiva intterupt
   //reimposta stato inziale
+  lcd.display();
  startTime = millis();
   fadeRedLed(20);
 }
 
+//isr, interrupt service routine
 void wakeUp(){
   wakeUpFlag = true;
 }
@@ -146,10 +142,6 @@ void setup() {
 }
 
 void loop() {
-  fadeRedLed(20);
+  Serial.println(digitalRead(btn[0]));
   delay(1000);
-  displaySequence();
-  enterDeepSleepUntilB1();
-
-  
 }
