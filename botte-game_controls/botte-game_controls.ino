@@ -173,6 +173,20 @@ void wakeUp() {
   interrupts(); // Riabilita gli interrupt
 }
 
+//legge il valore del potenziometro e lo converte nella difficoltà
+int readDifficultyLevel(){
+  potValue = analogRead(potPin);
+  if(potValue <= 255){
+    difficultyLevel = 1;
+  }else if(potValue > 255 && potValue <=510){
+    difficultyLevel = 2;
+  }else if(potValue > 510 && potValue <= 765){
+    difficultyLevel = 3;
+  }else{
+    difficultyLevel = 4;
+  }
+}
+
 
 void setup() {
   initHardware();
@@ -201,6 +215,7 @@ void loop() {
     
     return; // Torna subito all'inizio del loop
   }
+
 
   // --- STATI PRINCIPALI ---
 
