@@ -59,13 +59,34 @@ void fadeRedLedWait() {
   delay(15);
 }
 
+void displayAndScroll(const char* text, int row) {
+  int textLength = strlen(text);
+
+  lcd.setCursor(0, row);
+  lcd.print(text);
+
+  if (textLength > 16) {
+    int scrollSteps = textLength - 16 + 1;
+    
+    lcd.setCursor(16, row); 
+
+    for (int i = 0; i < scrollSteps; i++) {
+      lcd.scrollDisplayLeft();
+      delay(350);
+    }
+    
+    for (int i = 0; i < scrollSteps; i++) {
+      lcd.scrollDisplayRight();
+    }
+  }
+}
+
 // Mostra il messaggio di benvenuto
 void welcomeMessage() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Benvenuti a TOS!");
-  lcd.setCursor(0, 1);
-  lcd.print("Premi B1 per start");
+  lcd.begin(16, 2);
+  
+  displayAndScroll("Benvenuti a TOS!", 0);
+  displayAndScroll("Premi B1 per start", 1);
 }
 
 // Crea una sequenza casuale di numeri da 1 a 4 (senza ripetizioni)
@@ -225,6 +246,7 @@ void setup() {
 void loop() {
   // Fase iniziale: attesa che il giocatore inizi
   if (!giocoAvviato) {
+    welcomeMessage();
     fadeRedLedWait();           // LED rosso lampeggia dolcemente
     readDifficultyLevel();      // Legge continuamente la difficoltà
 
