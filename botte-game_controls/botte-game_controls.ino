@@ -6,63 +6,84 @@ const int redLedPin = 8;
 const int btn[] = {2, 3, 4, 5};
 const int potPin = A0;
 
-boolean giocoAvviato = false; //appena agigutnbe
-
-
+boolean giocoAvviato = false;
 boolean btn1pressed = false;
+volatile boolean wakeUpFlag = true;
+
 const int NUM_DIGITS = 4;
-int sequence[NUM_DIGITS]; //Sequenza di cifre {4, 1, 3, 2}
-const int NUM_greenLed =  sizeof(greenLedPins) / sizeof(greenLedPins[0]);
-const int NUM_btn =  sizeof(btn) / sizeof(btn[0]);
+int sequence[NUM_DIGITS];
+const int NUM_greenLed = sizeof(greenLedPins) / sizeof(greenLedPins[0]);
+const int NUM_btn = sizeof(btn) / sizeof(btn[0]);
+
 int difficultyLevel = 1;
+float factorF = 0.9;
 int potValue = 0;
-unsigned long startTime;
-const int maxTime = 10000;
-volatile boolean wakeUpFlag = true;  //serve per sapere se è stato premuto il pulsante per risveglio da deep sleeping
+
+unsigned long baseTime = 5000;
+unsigned long currentTimeLimit;
+int score = 0;
+bool gameOver = false;
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-
+// Inizializza LED, pulsanti e LCD
 void initHardware() {
   Serial.begin(9600);
-  //inizializzo LCD
   lcd.init();
   lcd.backlight();
-  //inizializzazione led
-  //verdi
-  for (int i = 0; i < NUM_greenLed; i++) {
-    pinMode(greenLedPins[i], OUTPUT);
-  }
-  //rosso
+
+  // LED verdi
+  for (int i = 0; i < NUM_greenLed; i++) pinMode(greenLedPins[i], OUTPUT);
+  // LED rosso
   pinMode(redLedPin, OUTPUT);
-  //inzializzazione pulsanti
-  for (int i = 0; i < NUM_btn ; i++) {
-    pinMode(btn[i], INPUT);
-  }
-  //mi salvo il momento di inizio per i 10 sec della deep sleeping
-  startTime = millis(); //funzione per salvare il momento di inzio
-  Serial.println("inizializzazione fatta");
+  // Pulsanti
+  for (int i = 0; i < NUM_btn; i++) pinMode(btn[i], INPUT);
+
+  Serial.println("Inizializzazione completata");
 }
 
-// Funzione per generare un numero di 4 cifre distinte (1-4)
+// Spegne tutti i LED verdi
+void allGreenLedsOff() {
+  for (int i = 0; i < NUM_greenLed; i++) digitalWrite(greenLedPins[i], LOW);
+}
+
+// Fa lampeggiare lentamente il LED rosso in attesa del giocatore
+void fadeRedLedWait() {
+  static int brightness = 0;
+  static int fadeAmount = 5;
+  analogWrite(redLedPin, brightness);
+  brightness += fadeAmount;
+
+  // Inverte direzione quando raggiunge massimo o minimo
+  if (brightness <= 0 || brightness >= 255) fadeAmount = -fadeAmount;
+  delay(15);
+}
+
+// Mostra il messaggio di benvenuto
+void welcomeMessage() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Benvenuti a TOS!");
+  lcd.setCursor(0, 1);
+  lcd.print("Premi B1 per start");
+}
+
+// Crea una sequenza casuale di numeri da 1 a 4 (senza ripetizioni)
 void generateSequence() {
   int number[] = {1, 2, 3, 4};
   for (int i = 0; i < NUM_DIGITS; i++) {
-    // Semplice shuffle in loco
     int j = random(i, NUM_DIGITS);
     int temp = number[i];
     number[i] = number[j];
     number[j] = temp;
-    sequence[i] = number[i]; // La sequenza contiene i numeri 1, 2, 3, 4 rimescolati
+    sequence[i] = number[i];
   }
 }
 
-// Funzione per stampare la sequenza sull'LCD
+// Mostra la sequenza sul display LCD
 void displaySequence() {
   char seqStr[5] = "";
-  for (int i = 0; i < NUM_DIGITS; i++) {
-    seqStr[i] = sequence[i] + '0';
-  }
+  for (int i = 0; i < NUM_DIGITS; i++) seqStr[i] = sequence[i] + '0';
   seqStr[NUM_DIGITS] = '\0';
 
   lcd.clear();
@@ -72,175 +93,185 @@ void displaySequence() {
   lcd.print(seqStr);
 }
 
-void allGreenLedsOff() {
-  for (int i = 0; i < NUM_greenLed; i++) {
-    digitalWrite(greenLedPins[i], LOW);
-  }
-  Serial.println("tutti led verdi spenti");
-}
-
-void fadeRedLed(int fadeDelay) {
-  //fade in
-  for (int brightness  = 0; brightness  <= 255; brightness += 5)
-    analogWrite(redLedPin, brightness );
-  delay(fadeDelay);
-  //fade out
-  for (int brightness  = 255; brightness  >= 0; brightness  -= 5 ) {
-    analogWrite(redLedPin, brightness );
-    delay(fadeDelay);
-  }
-}
-
-void welcomeMessage() {
-  lcd.setCursor(0, 0);
-  lcd.print("Welcome to TOS!");
-  lcd.setCursor(0, 1);
-  lcd.print("Press B1 to start");
-}
-
-boolean pulsantePremuto(int pin) {
-  if (digitalRead(pin) == HIGH) {
-    //btn premuto in tempo, avvio gioco
-    return true;
-  }
-  return false;
-}
-
-void enterDeepSleepUntilB1() {
-  if(pulsantePremuto(btn[0]) == true ){
-    //il pulsante é stato premuto durante il timer quindi si passa al gioco
-    btn1pressed = true;
-    startTime = millis(); // reset del timer
-    giocoAvviato = true;
-    Serial.println("Pulsante premuto!");
-  }
-
-  //se sono passati piu di 10 sec e non é stato premuto btn entro in deep sleep
-  //millis ritorna numero millisecondi passati dall avvio del programma
-  if (!btn1pressed && millis() - startTime >= maxTime) {
-    Serial.println("letsgooo sleep");
-    wakeUpFlag = false;
-    enterDeepSleep();
-  }
-}
-
-void enterDeepSleep() {
-  // 1. Pulizia fisica delle periferiche
-  lcd.noDisplay();
-  digitalWrite(redLedPin, LOW);
-  allGreenLedsOff();
-  
-  // *** DEBUG: Stampa un messaggio molto presto per sapere che siamo arrivati qui ***
-  Serial.println("Tentativo di Deep Sleep...");
-  Serial.flush(); // Garantisce che il buffer sia vuoto ORA.
-
-  // 2. Disabilita Serial e ADC prima di impostare lo sleep
-  
-  // Disabilita la Serial Communication (RX e TX)
-  // Questo spegne gli interrupt seriali che potrebbero risvegliare la CPU.
-  UCSR0B &= ~(_BV(RXEN0) | _BV(TXEN0)); 
-  
-  // Disabilita l'ADC (Analog-to-Digital Converter)
-  ADCSRA &= ~_BV(ADEN); 
-  
-  // 3. Setup Interrupt per il risveglio
-  attachInterrupt(digitalPinToInterrupt(btn[0]), wakeUp, RISING); 
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-  sleep_enable();
-  
-  // 4. Sequenza atomica
-  noInterrupts(); // Blocca tutti gli interrupt
-  interrupts();   // Riabilita (questo deve avvenire prima di sleep_cpu())
-  sleep_cpu();    // LA CPU SI FERMA QUI!
-  
-  // *** L'ESECUZIONE RIPRENDE QUI DOPO IL RISVEGLIO ***
-  
-  // 5. Riattiva le periferiche
-  sleep_disable();
-  detachInterrupt(digitalPinToInterrupt(btn[0])); 
-  
-  // Riabilita Serial e ADC
-  UCSR0B |= _BV(RXEN0) | _BV(TXEN0); // Riabilita Serial
-  ADCSRA |= _BV(ADEN); // Riabilita l'ADC
-
-  Serial.println("RISVEGLIO AVVENUTO! Esecuzione nel loop..."); 
-}
-
-//isr, interrupt service routine
-void wakeUp() {
-  noInterrupts(); // Disabilita gli interrupt all'interno della ISR per sicurezza.
-  wakeUpFlag = true;
-  interrupts(); // Riabilita gli interrupt
-}
-
-//legge il valore del potenziometro e lo converte nella difficoltà
-int readDifficultyLevel(){
+// Legge il potenziometro e imposta la difficoltà
+void readDifficultyLevel() {
   potValue = analogRead(potPin);
-  if(potValue <= 255){
+
+  // 4 intervalli che determinano il livello
+  if (potValue <= 255) {
     difficultyLevel = 1;
-  }else if(potValue > 255 && potValue <=510){
+    factorF = 0.9;
+    baseTime = 8000;
+  } else if (potValue <= 510) {
     difficultyLevel = 2;
-  }else if(potValue > 510 && potValue <= 765){
+    factorF = 0.8;
+    baseTime = 6000;
+  } else if (potValue <= 765) {
     difficultyLevel = 3;
-  }else{
+    factorF = 0.7;
+    baseTime = 4000;
+  } else {
     difficultyLevel = 4;
+    factorF = 0.6;
+    baseTime = 2500;
   }
 }
 
+// Legge la sequenza inserita dal giocatore e la confronta con quella corretta
+void readSequence() {
+  int inputSequence[NUM_DIGITS];
+  int index = 0;
+  bool lastBtnState[NUM_btn] = {LOW, LOW, LOW, LOW};
+  unsigned long startRound = millis();
 
+  // Attende che il giocatore prema i 4 tasti
+  while (index < NUM_DIGITS) {
+    for (int i = 0; i < NUM_btn; i++) {
+      int state = digitalRead(btn[i]);
+      
+      // Se un pulsante passa da non premuto a premuto
+      if (state == HIGH && lastBtnState[i] == LOW) {
+        inputSequence[index] = i + 1;
+        
+        // Accende temporaneamente il LED corrispondente
+        digitalWrite(greenLedPins[i], HIGH);
+        delay(200);
+        digitalWrite(greenLedPins[i], LOW);
+
+        index++;
+      }
+      lastBtnState[i] = state;
+    }
+
+    // Controlla se il tempo limite è scaduto
+    if (millis() - startRound > currentTimeLimit) {
+      gameOver = true;
+      return;
+    }
+  }
+
+  // Attende che tutti i tasti siano rilasciati prima di verificare
+  waitForAllButtonsRelease();
+
+  // Confronta la sequenza digitata con quella corretta
+  bool corretta = true;
+  for (int i = 0; i < NUM_DIGITS; i++) {
+    if (inputSequence[i] != sequence[i]) {
+      corretta = false;
+      break;
+    }
+  }
+
+  // Aggiorna il punteggio o termina il gioco
+  lcd.clear();
+  if (corretta) {
+    score += 10;
+    lcd.print("BUONO!");
+    lcd.setCursor(0, 1);
+    lcd.print("Score: ");
+    lcd.print(score);
+    delay(1500);
+    // Riduce il tempo disponibile per il round successivo
+    currentTimeLimit *= factorF;
+  } else {
+    gameOver = true;
+  }
+}
+
+// Mostra schermata di Game Over e resetta lo stato
+void gameOverScreen() {
+  lcd.clear();
+  lcd.print("GAME OVER");
+  lcd.setCursor(0, 1);
+  lcd.print("Score: ");
+  lcd.print(score);
+
+  // Lampeggia il LED rosso tre volte
+  for (int i = 0; i < 3; i++) {
+    analogWrite(redLedPin, 255);
+    delay(200);
+    analogWrite(redLedPin, 0);
+    delay(200);
+  }
+
+  delay(2000);
+  giocoAvviato = false;
+  score = 0;
+  currentTimeLimit = baseTime;
+}
+
+// Attende che tutti i pulsanti siano rilasciati
+void waitForAllButtonsRelease() {
+  bool allReleased = false;
+  while (!allReleased) {
+    allReleased = true;
+    for (int i = 0; i < NUM_btn; i++) {
+      if (digitalRead(btn[i]) == HIGH) {
+        allReleased = false;
+      }
+    }
+    delay(20); // piccolo debounce
+  }
+}
+
+// Impostazioni iniziali
 void setup() {
   initHardware();
   welcomeMessage();
-  generateSequence();
+  randomSeed(analogRead(A1)); // inizializza il generatore casuale
 }
 
+// Ciclo principale del gioco
 void loop() {
-  // A. GESTIONE DEL RISVEGLIO / INIZIALIZZAZIONE STATO
-  if (wakeUpFlag) {
-    Serial.println("Reset dello stato: Avvio o Risveglio dal sonno.");
-    // ... (Logica di reset invariata: lcd.display(), fadeRedLed, reset variabili, delay(100))
-    lcd.display();
-    fadeRedLed(20); 
-    giocoAvviato = false; 
-    btn1pressed = false;
-    startTime = millis(); 
-    wakeUpFlag = false; 
-    
-    // Attesa di rilascio del pulsante per evitare il rimbalzo
-    Serial.println("Attendendo rilascio pulsante...");
-    while (digitalRead(btn[0]) == HIGH) {
-        delay(1); 
+  // Fase iniziale: attesa che il giocatore inizi
+  if (!giocoAvviato) {
+    fadeRedLedWait();           // LED rosso lampeggia dolcemente
+    readDifficultyLevel();      // Legge continuamente la difficoltà
+
+    // Se viene premuto B1, inizia la partita
+    if (digitalRead(btn[0]) == HIGH) {
+      giocoAvviato = true;
+      btn1pressed = true;
+      score = 0;
+      currentTimeLimit = baseTime; // imposta tempo in base alla difficoltà
+
+      lcd.clear();
+      lcd.print("Livello: ");
+      lcd.print(difficultyLevel);
+      delay(1000);
+
+      lcd.clear();
+      lcd.print("Vai!");
+      delay(1000);
+
+      generateSequence();  // genera la prima sequenza
+      displaySequence();   // mostra la sequenza
+      delay(1500);
+
+      waitForAllButtonsRelease(); // attende rilascio prima di leggere
+      readSequence();             // legge la risposta del giocatore
     }
-    Serial.println("Pulsante rilasciato. Inizio ciclo di 10s.");
-    
-    return; // Torna subito all'inizio del loop
+
+    return; // torna all'inizio se il gioco non è partito
   }
 
-
-  // --- STATI PRINCIPALI ---
-
-  if (!giocoAvviato) {
-    // STATO 1: ATTESA O SONNO (Timer di 10 secondi in corso)
-    
-    // 1. Check rapido del pulsante: AVVIO GIOCO
-    if (digitalRead(btn[0]) == HIGH) {
-        Serial.println("Pulsante premuto in tempo! Avvio Gioco.");
-        giocoAvviato = true;
-        btn1pressed = true;
-        delay(50); 
-        // Non usare return; qui, permetti all'esecuzione di cadere nel blocco "Game is running"
-    }
-
-    // 2. Check del timeout: DEEP SLEEP
-    if (!btn1pressed && millis() - startTime >= maxTime) {
-        Serial.print("Tempo T scaduto. Inizio Deep Sleep.");
-        enterDeepSleep();
-        // L'esecuzione riprenderà dal blocco di gestione del risveglio (A)
-    }
+  // Fase di gioco attivo
+  if (gameOver) {
+    gameOverScreen();     // mostra schermata di fine gioco
+    welcomeMessage();     // torna allo stato iniziale
+    gameOver = false;
   } else {
-    // STATO 2: GIOCO AVVIATO
-    Serial.println("Game is running - Gioco attivo indefinitamente.");
-    delay(2000);
-    // ... logica del gioco ...
+    generateSequence();   // genera nuova sequenza
+    displaySequence();
+    delay(1000);
+
+    waitForAllButtonsRelease();
+    readSequence();
+
+    if (gameOver) {
+      gameOverScreen();
+      welcomeMessage();
+      gameOver = false;
+    }
   }
 }
