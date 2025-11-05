@@ -2,9 +2,12 @@
 #include <avr/sleep.h>
 
 const int greenLedPins[] = {12, 11, 10, 9};
-const int redLedPin = 8;
+const int redLedPin = 6;
 const int btn[] = {2, 3, 4, 5};
 const int potPin = A0;
+
+int brightness = 0;
+int fadeAmount = 5;
 
 boolean giocoAvviato = false;
 boolean btn1pressed = false;
@@ -13,6 +16,9 @@ const int NUM_DIGITS = 4;
 int sequence[NUM_DIGITS];
 const int NUM_greenLed = sizeof(greenLedPins) / sizeof(greenLedPins[0]);
 const int NUM_btn = sizeof(btn) / sizeof(btn[0]);
+
+unsigned long previousFadeMillis = 0;
+const long fadeInterval = 30; // 30ms tra ogni aggiornamento di luminosità
 
 int difficultyLevel = 1;
 float factorF = 0.9;
@@ -105,17 +111,6 @@ void allGreenLedsOff() {
   for (int i = 0; i < NUM_greenLed; i++) digitalWrite(greenLedPins[i], LOW);
 }
 
-// Fa lampeggiare lentamente il LED rosso in attesa del giocatore
-void fadeRedLedWait() {
-  static int brightness = 0;
-  static int fadeAmount = 5;
-  analogWrite(redLedPin, brightness);
-  brightness += fadeAmount;
-
-  // Inverte direzione quando raggiunge massimo o minimo
-  if (brightness <= 0 || brightness >= 255) fadeAmount = -fadeAmount;
-  delay(15);
-}
 
 void displayAndScroll(const char* text, int row) {
   int textLength = strlen(text);
@@ -305,10 +300,22 @@ void loop() {
   // Fase iniziale: attesa che il giocatore inizi
   if (!giocoAvviato) {
     welcomeMessage();
-    fadeRedLedWait();           // LED rosso lampeggia dolcemente
     readDifficultyLevel();      // Legge continuamente la difficoltà
-    
+
     waitForSleep();
+    unsigned long currentMillis = millis();
+    if (currentMillis - previousFadeMillis >= fadeInterval) {
+      previousFadeMillis = currentMillis;
+
+      analogWrite(redLedPin, brightness);
+      brightness = brightness + fadeAmount;
+
+      if (brightness <= 0 || brightness >= 255) {
+        fadeAmount = -fadeAmount;
+      }
+      // NOTA: il vecchio delay(30) è sparito!
+    }
+    
     
     // Se viene premuto B1, inizia la partita
     if (digitalRead(btn[0]) == HIGH) {
