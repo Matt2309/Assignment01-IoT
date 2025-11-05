@@ -8,7 +8,6 @@ const int potPin = A0;
 
 boolean giocoAvviato = false;
 boolean btn1pressed = false;
-volatile boolean wakeUpFlag = true;
 
 const int NUM_DIGITS = 4;
 int sequence[NUM_DIGITS];
@@ -23,6 +22,12 @@ unsigned long baseTime = 5000;
 unsigned long currentTimeLimit;
 int score = 0;
 bool gameOver = false;
+
+const unsigned long MAX_WAIT_TIME = 10000; // 10 sec
+unsigned long sleepStartTime = 0;
+
+volatile byte flag = 0; //(0 = awake, 1 = sleeping)
+
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
@@ -40,6 +45,59 @@ void initHardware() {
   for (int i = 0; i < NUM_btn; i++) pinMode(btn[i], INPUT);
 
   Serial.println("Inizializzazione completata");
+}
+
+void wakeupCallback() {
+  Serial.println("eii");
+  flag = 0;
+}
+
+void sleep() {
+  allGreenLedsOff();
+  analogWrite(redLedPin, 0);
+  lcd.noBacklight();
+  lcd.noDisplay();
+
+  Serial.println("Entro in deep sleep...");
+  Serial.flush();
+
+  flag = 1;
+  EIFR = bit(INTF0); //remove previous interrupts
+
+  attachInterrupt(digitalPinToInterrupt(btn[0]), wakeupCallback, RISING);
+
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  sleep_enable();
+
+  sleep_cpu();
+  sleep_disable();
+  detachInterrupt(digitalPinToInterrupt(btn[0]));
+
+  lcd.display();
+  lcd.backlight();
+  Serial.println("Risvegliato!");
+
+  sleepStartTime = millis();
+  flag = 0;
+}
+
+void waitForSleep() {
+  if (sleepStartTime == 0) {
+    sleepStartTime = millis();
+    Serial.println("Timer sleep attivato");
+  }
+  
+  // reset timer if button is clicked
+  if (digitalRead(btn[0]) == HIGH) {
+    sleepStartTime = 0;
+    return;
+  }
+
+  // Check if 10sec is over
+  if (millis() - sleepStartTime >= MAX_WAIT_TIME) {
+    sleep();
+    sleepStartTime = 0;
+  }
 }
 
 // Spegne tutti i LED verdi
@@ -249,7 +307,9 @@ void loop() {
     welcomeMessage();
     fadeRedLedWait();           // LED rosso lampeggia dolcemente
     readDifficultyLevel();      // Legge continuamente la difficoltà
-
+    
+    waitForSleep();
+    
     // Se viene premuto B1, inizia la partita
     if (digitalRead(btn[0]) == HIGH) {
       giocoAvviato = true;
