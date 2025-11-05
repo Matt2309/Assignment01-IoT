@@ -34,10 +34,29 @@ unsigned long sleepStartTime = 0;
 
 volatile byte flag = 0; //(0 = awake, 1 = sleeping)
 
-
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// Inizializza LED, pulsanti e LCD
+void updateRedLedFade() {
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousFadeMillis >= fadeInterval) {
+    previousFadeMillis = currentMillis;
+    analogWrite(redLedPin, brightness);
+    brightness = brightness + fadeAmount;
+    if (brightness <= 0 || brightness >= 255) {
+      fadeAmount = -fadeAmount;
+    }
+  }
+}
+
+// Attesa non bloccante che continua a gestire LED e sleep
+void smartDelay(unsigned long ms) {
+  unsigned long __start = millis();
+  while (millis() - __start < ms) {
+    updateRedLedFade();
+    waitForSleep();
+  }
+}
+
 void initHardware() {
   Serial.begin(9600);
   lcd.init();
@@ -56,6 +75,10 @@ void initHardware() {
 void wakeupCallback() {
   Serial.println("eii");
   flag = 0;
+}
+
+void allGreenLedsOff() {
+  for (int i = 0; i < NUM_greenLed; i++) digitalWrite(greenLedPins[i], LOW);
 }
 
 void sleep() {
@@ -90,15 +113,12 @@ void sleep() {
 void waitForSleep() {
   if (sleepStartTime == 0) {
     sleepStartTime = millis();
-    Serial.println("Timer sleep attivato");
   }
-  
   // reset timer if button is clicked
   if (digitalRead(btn[0]) == HIGH) {
     sleepStartTime = 0;
     return;
   }
-
   // Check if 10sec is over
   if (millis() - sleepStartTime >= MAX_WAIT_TIME) {
     sleep();
@@ -106,28 +126,19 @@ void waitForSleep() {
   }
 }
 
-// Spegne tutti i LED verdi
-void allGreenLedsOff() {
-  for (int i = 0; i < NUM_greenLed; i++) digitalWrite(greenLedPins[i], LOW);
-}
-
-
 void displayAndScroll(const char* text, int row) {
   int textLength = strlen(text);
-
   lcd.setCursor(0, row);
   lcd.print(text);
 
   if (textLength > 16) {
     int scrollSteps = textLength - 16 + 1;
-    
-    lcd.setCursor(16, row); 
+    lcd.setCursor(16, row);
 
     for (int i = 0; i < scrollSteps; i++) {
       lcd.scrollDisplayLeft();
-      delay(350);
+      smartDelay(350);
     }
-    
     for (int i = 0; i < scrollSteps; i++) {
       lcd.scrollDisplayRight();
     }
@@ -137,7 +148,6 @@ void displayAndScroll(const char* text, int row) {
 // Mostra il messaggio di benvenuto
 void welcomeMessage() {
   lcd.begin(16, 2);
-  
   displayAndScroll("Benvenuti a TOS!", 0);
   displayAndScroll("Premi B1 per start", 1);
 }
@@ -159,7 +169,6 @@ void displaySequence() {
   char seqStr[5] = "";
   for (int i = 0; i < NUM_DIGITS; i++) seqStr[i] = sequence[i] + '0';
   seqStr[NUM_DIGITS] = '\0';
-
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Sequence:");
@@ -170,24 +179,28 @@ void displaySequence() {
 // Legge il potenziometro e imposta la difficoltà
 void readDifficultyLevel() {
   potValue = analogRead(potPin);
-
   // 4 intervalli che determinano il livello
   if (potValue <= 255) {
-    difficultyLevel = 1;
-    factorF = 0.9;
-    baseTime = 8000;
+    difficultyLevel = 1; factorF = 0.9; baseTime = 8000;
   } else if (potValue <= 510) {
-    difficultyLevel = 2;
-    factorF = 0.8;
-    baseTime = 6000;
+    difficultyLevel = 2; factorF = 0.8; baseTime = 6000;
   } else if (potValue <= 765) {
-    difficultyLevel = 3;
-    factorF = 0.7;
-    baseTime = 4000;
+    difficultyLevel = 3; factorF = 0.7; baseTime = 4000;
   } else {
-    difficultyLevel = 4;
-    factorF = 0.6;
-    baseTime = 2500;
+    difficultyLevel = 4; factorF = 0.6; baseTime = 2500;
+  }
+}
+
+void waitForAllButtonsRelease() {
+  bool allReleased = false;
+  while (!allReleased) {
+    allReleased = true;
+    for (int i = 0; i < NUM_btn; i++) {
+      if (digitalRead(btn[i]) == HIGH) {
+        allReleased = false;
+      }
+    }
+    smartDelay(20); // debounce
   }
 }
 
@@ -202,21 +215,17 @@ void readSequence() {
   while (index < NUM_DIGITS) {
     for (int i = 0; i < NUM_btn; i++) {
       int state = digitalRead(btn[i]);
-      
       // Se un pulsante passa da non premuto a premuto
       if (state == HIGH && lastBtnState[i] == LOW) {
         inputSequence[index] = i + 1;
-        
         // Accende temporaneamente il LED corrispondente
         digitalWrite(greenLedPins[i], HIGH);
-        delay(200);
+        smartDelay(200);
         digitalWrite(greenLedPins[i], LOW);
-
         index++;
       }
       lastBtnState[i] = state;
     }
-
     // Controlla se il tempo limite è scaduto
     if (millis() - startRound > currentTimeLimit) {
       gameOver = true;
@@ -244,15 +253,13 @@ void readSequence() {
     lcd.setCursor(0, 1);
     lcd.print("Score: ");
     lcd.print(score);
-    delay(1500);
-    // Riduce il tempo disponibile per il round successivo
+    smartDelay(1500);
     currentTimeLimit *= factorF;
   } else {
     gameOver = true;
   }
 }
 
-// Mostra schermata di Game Over e resetta lo stato
 void gameOverScreen() {
   lcd.clear();
   lcd.print("GAME OVER");
@@ -263,96 +270,67 @@ void gameOverScreen() {
   // Lampeggia il LED rosso tre volte
   for (int i = 0; i < 3; i++) {
     analogWrite(redLedPin, 255);
-    delay(200);
+    smartDelay(200);
     analogWrite(redLedPin, 0);
-    delay(200);
+    smartDelay(200);
   }
 
-  delay(2000);
+  smartDelay(2000);
   giocoAvviato = false;
   score = 0;
   currentTimeLimit = baseTime;
 }
 
-// Attende che tutti i pulsanti siano rilasciati
-void waitForAllButtonsRelease() {
-  bool allReleased = false;
-  while (!allReleased) {
-    allReleased = true;
-    for (int i = 0; i < NUM_btn; i++) {
-      if (digitalRead(btn[i]) == HIGH) {
-        allReleased = false;
-      }
-    }
-    delay(20); // piccolo debounce
-  }
-}
-
-// Impostazioni iniziali
 void setup() {
   initHardware();
   welcomeMessage();
   randomSeed(analogRead(A1)); // inizializza il generatore casuale
+  randomSeed(analogRead(A1));
 }
 
-// Ciclo principale del gioco
 void loop() {
-  // Fase iniziale: attesa che il giocatore inizi
   if (!giocoAvviato) {
     welcomeMessage();
     readDifficultyLevel();      // Legge continuamente la difficoltà
-
+    readDifficultyLevel();
     waitForSleep();
-    unsigned long currentMillis = millis();
-    if (currentMillis - previousFadeMillis >= fadeInterval) {
-      previousFadeMillis = currentMillis;
+    updateRedLedFade();
 
-      analogWrite(redLedPin, brightness);
-      brightness = brightness + fadeAmount;
-
-      if (brightness <= 0 || brightness >= 255) {
-        fadeAmount = -fadeAmount;
-      }
-      // NOTA: il vecchio delay(30) è sparito!
-    }
-    
-    
-    // Se viene premuto B1, inizia la partita
     if (digitalRead(btn[0]) == HIGH) {
       giocoAvviato = true;
       btn1pressed = true;
       score = 0;
       currentTimeLimit = baseTime; // imposta tempo in base alla difficoltà
+      currentTimeLimit = baseTime;
 
       lcd.clear();
       lcd.print("Livello: ");
       lcd.print(difficultyLevel);
-      delay(1000);
+      smartDelay(1000);
 
       lcd.clear();
       lcd.print("Vai!");
-      delay(1000);
+      smartDelay(1000);
 
-      generateSequence();  // genera la prima sequenza
-      displaySequence();   // mostra la sequenza
-      delay(1500);
+      generateSequence();
+      displaySequence();
+      smartDelay(1500);
 
-      waitForAllButtonsRelease(); // attende rilascio prima di leggere
-      readSequence();             // legge la risposta del giocatore
+      waitForAllButtonsRelease();
+      readSequence();
     }
-
     return; // torna all'inizio se il gioco non è partito
+    return;
   }
 
-  // Fase di gioco attivo
   if (gameOver) {
-    gameOverScreen();     // mostra schermata di fine gioco
-    welcomeMessage();     // torna allo stato iniziale
+    gameOverScreen();
+    welcomeMessage();
     gameOver = false;
   } else {
-    generateSequence();   // genera nuova sequenza
+    generateSequence();
     displaySequence();
-    delay(1000);
+    smartDelay(1000);
 
     waitForAllButtonsRelease();
     readSequence();
