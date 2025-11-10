@@ -32,8 +32,6 @@ bool gameOver = false;
 const unsigned long MAX_WAIT_TIME = 10000; // 10 sec
 unsigned long sleepStartTime = 0;
 
-volatile byte flag = 0; //(0 = awake, 1 = sleeping)
-
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 void updateRedLedFade() {
@@ -76,8 +74,7 @@ void initHardware() {
 }
 
 void wakeupCallback() {
-  Serial.println("eii");
-  flag = 0;
+  Serial.println("Wake up");
 }
 
 void allGreenLedsOff() {
@@ -93,7 +90,6 @@ void sleep() {
   Serial.println("Entro in deep sleep...");
   Serial.flush();
 
-  flag = 1;
   EIFR = bit(INTF0); //remove previous interrupts
 
   attachInterrupt(digitalPinToInterrupt(btn[0]), wakeupCallback, RISING);
@@ -110,7 +106,6 @@ void sleep() {
   Serial.println("Risvegliato!");
 
   sleepStartTime = millis();
-  flag = 0;
 }
 
 void waitForSleep() {
@@ -153,8 +148,8 @@ void displayAndScroll(const char* text, int row) {
 }
 
 void welcomeMessage() {
-  displayAndScroll("Benvenuti a TOS!", 0);
-  displayAndScroll("Premi B1 per start", 1);
+  displayAndScroll("Welcome to TOS!", 0);
+  displayAndScroll("Press B1 to Start", 1);
 }
 
 // Random sequence of 4 number from 1 to 4 without repetitions
@@ -251,7 +246,7 @@ void readSequence() {
   lcd.clear();
   if (corretta) {
     score += 10;
-    lcd.print("BUONO!");
+    lcd.print("GOOD!");
     lcd.setCursor(0, 1);
     lcd.print("Score: ");
     lcd.print(score);
@@ -266,17 +261,13 @@ void gameOverScreen() {
   lcd.clear();
   lcd.print("GAME OVER");
   lcd.setCursor(0, 1);
-  lcd.print("Score: ");
+  lcd.print("Final Score:");
   lcd.print(score);
 
-  for (int i = 0; i < 3; i++) {
-    analogWrite(redLedPin, 255);
-    smartDelay(200);
-    analogWrite(redLedPin, 0);
-    smartDelay(200);
-  }
-
+  analogWrite(redLedPin, 255);
   smartDelay(2000);
+  analogWrite(redLedPin, 0);
+
   giocoAvviato = false;
   score = 0;
   currentTimeLimit = baseTime;
@@ -300,9 +291,14 @@ void loop() {
       btn1pressed = true;
       score = 0;
       currentTimeLimit = baseTime;
+      sleepStartTime = 0;
 
       // turn off red led
       analogWrite(redLedPin, 0);
+
+      lcd.clear();
+      lcd.print("Go!");
+      smartDelay(1000);
 
       lcd.clear();
       lcd.print("Livello: ");
