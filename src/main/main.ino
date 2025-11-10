@@ -1,3 +1,10 @@
+/* 
+AUTHORS:
+BOTTEGHI MATTEO     0001129907
+MULARONI MATTIA     0001126065
+MONTANARI NICOLAS   0001128064 
+*/
+
 #include <LiquidCrystal_I2C.h>
 #include <avr/sleep.h>
 
