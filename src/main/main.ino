@@ -16,7 +16,7 @@ const int potPin = A0;
 int brightness = 0;
 int fadeAmount = 5;
 
-boolean giocoAvviato = false;
+boolean isGameStarted = false;
 boolean btn1pressed = false;
 
 const int NUM_DIGITS = 4;
@@ -42,7 +42,7 @@ unsigned long sleepStartTime = 0;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 void updateRedLedFade() {
-  if(!giocoAvviato){
+  if(!isGameStarted){
     unsigned long currentMillis = millis();
     if (currentMillis - previousFadeMillis >= fadeInterval) {
       previousFadeMillis = currentMillis;
@@ -77,7 +77,7 @@ void initHardware() {
   // buttons
   for (int i = 0; i < NUM_btn; i++) pinMode(btn[i], INPUT);
 
-  Serial.println("Inizializzazione completata");
+  Serial.println("Init completed");
 }
 
 void wakeupCallback() {
@@ -242,16 +242,16 @@ void readSequence() {
   waitForAllButtonsRelease();
 
   // Compare the sequence
-  bool corretta = true;
+  bool correct = true;
   for (int i = 0; i < NUM_DIGITS; i++) {
     if (inputSequence[i] != sequence[i]) {
-      corretta = false;
+      correct = false;
       break;
     }
   }
 
   lcd.clear();
-  if (corretta) {
+  if (correct) {
     score += 10;
     lcd.print("GOOD!");
     lcd.setCursor(0, 1);
@@ -275,7 +275,7 @@ void gameOverScreen() {
   smartDelay(2000);
   analogWrite(redLedPin, 0);
 
-  giocoAvviato = false;
+  isGameStarted = false;
   score = 0;
   currentTimeLimit = baseTime;
 }
@@ -287,14 +287,14 @@ void setup() {
 }
 
 void loop() {
-  if (!giocoAvviato) {
+  if (!isGameStarted) {
     updateRedLedFade();
     welcomeMessage();
     readDifficultyLevel();
 
     // If B1 is pressed, then start the game
     if (digitalRead(btn[0]) == HIGH) {
-      giocoAvviato = true;
+      isGameStarted = true;
       btn1pressed = true;
       score = 0;
       currentTimeLimit = baseTime;
@@ -308,13 +308,13 @@ void loop() {
       smartDelay(1000);
 
       lcd.clear();
-      lcd.print("Livello: ");
+      lcd.print("Level: ");
       lcd.print(difficultyLevel);
       smartDelay(1000);
     }
   }
 
-  if (giocoAvviato) {
+  if (isGameStarted) {
     if (gameOver) {
       gameOverScreen();
       welcomeMessage();
